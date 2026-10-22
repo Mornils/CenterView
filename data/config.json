@@ -1,0 +1,77 @@
+{
+  "persons": [
+    {
+      "name": "tst1",
+      "color": "#7171f0",
+      "inDay": true,
+      "caldav": [
+        {
+          "label": "Nils",
+          "url": "https://cloud.ax-home.de/remote.php/dav",
+          "username": "Nils",
+          "password": "Maximillian@2007"
+        }
+      ],
+      "ics": [
+        {
+          "label": "test 1",
+          "url": "https://zpa.cs.hm.edu/global/ics_feed/rss/89bef469-7140-437b-a1fc-c09172216e01/"
+        },
+        {
+          "label": "jkjl",
+          "url": "https://zpa.cs.hm.edu/global/ics_feed/rss/89bef469-7140-437b-a1fc-c09172216e01/"
+        }
+      ]
+    },
+    {
+      "name": "tst2",
+      "color": "#247033",
+      "inDay": true,
+      "caldav": [],
+      "ics": [
+        {
+          "label": "test2",
+          "url": "https://zpa.cs.hm.edu/global/ics_feed/rss/89bef469-7140-437b-a1fc-c09172216e01/"
+        }
+      ]
+    }
+  ],
+  "hidden": [
+    "51953662f46d",
+    "801130028dc1",
+    "b3daaf8287a5",
+    "76fcb08d363e",
+    "545f0943d0a9",
+    "6df53286f0fa",
+    "ada947a36a5e",
+    "15bfcbf8f143",
+    "7c174e0c5a8c",
+    "a002b7a904b3",
+    "937cf320472f",
+    "985a83fc3c8f"
+  ],
+  "hiddenUp": [
+    "ccabd7e39fce"
+  ],
+  "colors": {
+    "51953662f46d": "#6f115a",
+    "e6b80e38558b": "#802828"
+  },
+  "names": {},
+  "dayStart": 7,
+  "dayEnd": 22,
+  "hiddenDay": [
+    "b3daaf8287a5",
+    "801130028dc1",
+    "7c174e0c5a8c",
+    "545f0943d0a9",
+    "ada947a36a5e",
+    "6df53286f0fa",
+    "a002b7a904b3",
+    "985a83fc3c8f",
+    "52ad0ed89411",
+    "937cf320472f",
+    "69e5fd49de5f",
+    "76fcb08d363e"
+  ]
+}

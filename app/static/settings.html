@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Einstellungen</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="settings">
+  <div class="row"><h1 style="flex:1">Einstellungen</h1><a href="./">← Zur Anzeige</a></div>
+  <div class="card">
+    <h3>Sichtbare Stunden</h3>
+    <div class="row">von <input type="number" id="dayStart" min="0" max="23"> bis <input type="number" id="dayEnd" min="1" max="24"> Uhr</div>
+  </div>
+  <div id="persons"></div>
+  <button id="addPerson">+ Person</button>
+</div>
+<div class="bar"><span id="status"></span><button class="on" id="save">Speichern</button></div>
+<script>
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
+let cfg, srcs = [];
+
+function render() {
+  const box = $("persons"); box.innerHTML = "";
+  cfg.persons.forEach((p, i) => {
+    const card = document.createElement("div"); card.className = "card";
+    card.innerHTML = `
+      <div class="row">
+        <input type="color" value="${esc(p.color)}" data-k="color">
+        <input type="text" placeholder="Name" value="${esc(p.name)}" data-k="name">
+        <label><input type="checkbox" ${p.inDay ? "checked" : ""} data-k="inDay"> eigene Tagesansicht</label>
+        <button class="danger" data-del>Entfernen</button>
+      </div>
+      <h3>CalDAV-Konten</h3>
+      ${p.caldav.map((a, j) => `<div class="row">
+        <input type="text" placeholder="Bezeichnung" value="${esc(a.label)}" data-l="caldav" data-j="${j}" data-k="label">
+        <input type="url" placeholder="https://cloud.example.com/remote.php/dav" value="${esc(a.url)}" data-l="caldav" data-j="${j}" data-k="url">
+        <input type="text" placeholder="Benutzer" value="${esc(a.username)}" data-l="caldav" data-j="${j}" data-k="username">
+        <input type="password" placeholder="Passwort" value="${esc(a.password)}" data-l="caldav" data-j="${j}" data-k="password">
+        <button data-rm="caldav" data-j="${j}">✕</button></div>`).join("")}
+      <button data-add="caldav">+ CalDAV</button>
+      <h3>ICS-Feeds</h3>
+      ${p.ics.map((f, j) => `<div class="row">
+        <input type="text" placeholder="Bezeichnung" value="${esc(f.label)}" data-l="ics" data-j="${j}" data-k="label">
+        <input type="url" placeholder="https://… .ics oder webcal://…" value="${esc(f.url)}" data-l="ics" data-j="${j}" data-k="url">
+        <button data-rm="ics" data-j="${j}">✕</button></div>`).join("")}
+      <button data-add="ics">+ ICS-Feed</button>
+      <h3>Kalender</h3>
+      ${srcs.filter(s => s.person === p.name).map(s => `<div class="row">
+        <label title="in der Wochenansicht anzeigen"><input type="checkbox" ${cfg.hidden.includes(s.id) ? "" : "checked"} data-list="hidden" data-id="${esc(s.id)}"> Woche</label>
+        <label title="in der Tagesansicht anzeigen"><input type="checkbox" ${cfg.hiddenDay.includes(s.id) ? "" : "checked"} data-list="hiddenDay" data-id="${esc(s.id)}"> Tag</label>
+        <label title="in der 2-Wochen-Liste anzeigen"><input type="checkbox" ${cfg.hiddenUp.includes(s.id) ? "" : "checked"} data-list="hiddenUp" data-id="${esc(s.id)}"> 2 Wochen</label>
+        <input type="color" value="${esc(cfg.colors[s.id] || s.color || p.color)}" data-src="${esc(s.id)}">
+        <input type="text" placeholder="${esc(s.name)}" value="${esc(cfg.names[s.id])}" data-name="${esc(s.id)}">
+        ${s.error ? `<span title="${esc(s.error)}">⚠</span>` : ""}
+        ${cfg.colors[s.id] ? `<button data-reset="${esc(s.id)}" title="${s.color ? "CalDAV-Farbe" : "Personenfarbe"} verwenden">↺</button>` : ""}</div>`).join("")
+        || '<div class="row" style="color:var(--muted)">Kalender werden geladen … (neue Konten erscheinen nach dem Speichern)</div>'}`;
+    card.oninput = ev => {
+      const t = ev.target, k = t.dataset.k;
+      if (t.dataset.src) { cfg.colors[t.dataset.src] = t.value; return; }
+      if (t.dataset.name) { cfg.names[t.dataset.name] = t.value; return; }
+      if (t.dataset.list) { const l = t.dataset.list, id = t.dataset.id; cfg[l] = cfg[l].filter(x => x !== id).concat(t.checked ? [] : [id]); return; }
+      if (!k) return;
+      const v = t.type === "checkbox" ? t.checked : t.value;
+      if (t.dataset.l) p[t.dataset.l][t.dataset.j][k] = v; else p[k] = v;
+    };
+    card.onclick = ev => {
+      const t = ev.target;
+      if (t.dataset.del !== undefined && confirm(`${p.name || "Person"} entfernen?`)) cfg.persons.splice(i, 1);
+      else if (t.dataset.add) p[t.dataset.add].push({label: "", url: "", username: "", password: ""});
+      else if (t.dataset.reset) delete cfg.colors[t.dataset.reset];
+      else if (t.dataset.rm) p[t.dataset.rm].splice(+t.dataset.j, 1);
+      else return;
+      render();
+    };
+    box.append(card);
+  });
+}
+
+$("addPerson").onclick = () => {
+  cfg.persons.push({name: "", color: "#" + Math.floor(Math.random() * 0xffffff).toString(16).padStart(6, "0"), inDay: true, caldav: [], ics: []});
+  render();
+};
+$("save").onclick = async () => {
+  cfg.dayStart = +$("dayStart").value; cfg.dayEnd = +$("dayEnd").value;
+  $("status").textContent = "Speichere…";
+  const r = await fetch("api/settings", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(cfg)});
+  $("status").textContent = r.ok ? "Gespeichert ✓" : "Fehler: " + r.status;
+  if (r.ok) init();
+};
+
+async function init() {
+  cfg = await (await fetch("api/settings")).json();
+  cfg.colors ??= {}; cfg.names ??= {}; cfg.hidden ??= []; cfg.hiddenDay ??= []; cfg.hiddenUp ??= [];
+  cfg.persons.forEach(p => { p.caldav ??= []; p.ics ??= []; p.inDay ??= true; });
+  $("dayStart").value = cfg.dayStart ?? 7; $("dayEnd").value = cfg.dayEnd ?? 22;
+  render();
+  // calendar discovery can be slow (CalDAV), so fill the per-calendar rows in afterwards; edits live in cfg, so nothing is lost
+  srcs = (await (await fetch("api/week")).json()).sources;
+  render();
+}
+init();
+</script>
+</body>
+</html>

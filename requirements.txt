@@ -1,0 +1,7 @@
+flask==3.1.0
+gunicorn==23.0.0
+caldav==1.4.0
+icalendar==6.1.0
+recurring-ical-events==3.3.3
+requests==2.32.3
+tzdata==2024.2

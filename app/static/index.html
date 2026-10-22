@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wochenplan</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1 id="title"></h1>
+    <div class="group">
+      <button id="prev">‹</button><button id="today">Heute</button><button id="next">›</button>
+    </div>
+    <div class="group">
+      <button id="vWeek">Woche</button><button id="vDay">Tag</button>
+    </div>
+    <div class="group" id="tabs"></div>
+    <div class="clock" id="clock"></div>
+    <a href="settings" title="Einstellungen"><button>⚙</button></a>
+  </header>
+  <div class="chips" id="chips"></div>
+  <div class="main">
+    <div class="grid" id="grid"></div>
+    <aside class="upcoming" id="upcoming" hidden></aside>
+  </div>
+</div>
+<script>
+const WD = ["So", "Mo", "Di", "Mi", "Do", "Fr", "Sa"];
+// #week, #day or #day/<Name> (kiosk can open a person's day view directly)
+let [view, person] = location.hash.slice(1).split("/").map(decodeURIComponent);
+if (view !== "day") view = "week";
+let offset = 0, data = null, lastTouch = 0;
+
+const $ = id => document.getElementById(id);
+const el = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; };
+const esc = s => s.replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
+const iso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
+const midnight = d => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+const hm = d => d.toLocaleTimeString("de-DE", {hour: "2-digit", minute: "2-digit"});
+
+function anchor() {  // the day being viewed
+  const t = midnight(new Date());
+  return view === "week" ? addDays(t, offset * 7) : addDays(t, offset);
+}
+function monday(d) { return addDays(d, -((d.getDay() + 6) % 7)); }
+
+async function load(refresh) {
+  // day view needs 3 weeks from Monday so the 2-week upcoming list is always covered
+  const r = await fetch(`api/week?date=${iso(anchor())}&weeks=${view === "day" ? 3 : 1}${refresh ? "&refresh=1" : ""}`);
+  data = await r.json();
+  data.events.forEach(e => { e.s = new Date(e.start); e.e = new Date(e.end); });
+  render();
+}
+
+function render() {
+  if (!data) return;
+  const hiddenKey = view === "week" ? "hidden" : "hiddenDay";  // week and day view each have their own visibility
+  const hidden = new Set(data[hiddenKey]);
+  const pColor = Object.fromEntries(data.persons.map(p => [p.name, p.color]));
+  const srcPerson = Object.fromEntries(data.sources.map(s => [s.id, s.person]));
+  const color = Object.fromEntries(data.sources.map(s => [s.id, data.colors[s.id] || s.color || pColor[s.person]]));
+  const name = Object.fromEntries(data.sources.map(s => [s.id, data.names[s.id] || s.name]));
+  const dayPersons = data.persons.filter(p => p.inDay);
+  if (view === "day" && !dayPersons.some(p => p.name === person)) person = dayPersons[0]?.name;
+  const evs = data.events.filter(e => !hidden.has(e.src) && srcPerson[e.src] && (view === "week" || srcPerson[e.src] === person));
+
+  // person tabs (day view)
+  const tabs = $("tabs"); tabs.innerHTML = "";
+  if (view === "day") for (const p of dayPersons) {
+    const b = el("button", p.name === person ? "on" : "", `<span style="color:${p.name === person ? "#fff" : p.color}">●</span> ${esc(p.name)}`);
+    b.onclick = () => go(() => { person = p.name; location.hash = "day/" + encodeURIComponent(p.name); });
+    tabs.append(b);
+  }
+
+  // calendar chips
+  const chips = $("chips"); chips.innerHTML = "";
+  for (const s of data.sources.filter(s => view === "week" || s.person === person)) {
+    const c = el("button", "chip" + (hidden.has(s.id) ? " off" : "") + (s.error ? " err" : ""),
+      `<span class="dot" style="background:${color[s.id]}"></span>${view === "week" ? esc(s.person) + " · " : ""}${esc(name[s.id])}${s.error ? " ⚠" : ""}`);
+    if (s.error) c.title = s.error;
+    c.onclick = () => toggle(s.id);
+    chips.append(c);
+  }
+
+  // columns: days (week) or persons (day)
+  const a = anchor(), today = midnight(new Date());
+  let cols;
+  if (view === "week") {
+    const m = monday(a);
+    $("title").textContent = `KW ${kw(m)} · ${m.toLocaleDateString("de-DE", {day: "numeric", month: "short"})} – ${addDays(m, 6).toLocaleDateString("de-DE", {day: "numeric", month: "short", year: "numeric"})}`;
+    cols = [...Array(7)].map((_, i) => {
+      const d = addDays(m, i);
+      return {day: d, head: `${WD[d.getDay()]}<small>${d.getDate()}.${d.getMonth() + 1}.</small>`, evs};
+    });
+  } else {
+    $("title").textContent = a.toLocaleDateString("de-DE", {weekday: "long", day: "numeric", month: "long"});
+    cols = person ? [{day: a, head: esc(person), evs}] : [];
+  }
+  // the 2-week list has its own visibility setting, independent of the grid/chips
+  const hiddenUp = new Set(data.hiddenUp);
+  upcoming(view === "day" ? data.events.filter(e => !hiddenUp.has(e.src) && srcPerson[e.src] === person) : null, a, color, name);
+  $("vWeek").classList.toggle("on", view === "week");
+  $("vDay").classList.toggle("on", view === "day");
+
+  const grid = $("grid"); grid.innerHTML = "";
+  if (!cols.length) { grid.style.display = "block"; grid.append(el("div", "empty", 'Noch keine Personen – <a href="settings">Einstellungen öffnen</a>')); return; }
+  const H0 = data.dayStart, H1 = Math.max(data.dayEnd, H0 + 1), span = H1 - H0;
+  grid.style.display = "grid";
+  grid.style.gridTemplateColumns = `48px repeat(${cols.length}, 1fr)`;
+  grid.style.gridTemplateRows = "auto auto 1fr";
+
+  grid.append(el("div", "colhead"));
+  cols.forEach(c => grid.append(el("div", "colhead" + (+c.day === +today && view === "week" ? " today" : ""), c.head)));
+  grid.append(el("div", "allday"));
+  const pct = h => `${(h - H0) / span * 100}%`;
+
+  const timed = [];
+  for (const c of cols) {
+    const d0 = c.day, d1 = addDays(d0, 1);
+    const dayEvs = c.evs.filter(e => e.s < d1 && e.e > d0 || (+e.s === +e.e && e.s >= d0 && e.s < d1));
+    const ad = el("div", "allday");
+    dayEvs.filter(isAllDay).forEach(e => {
+      const x = el("div", "ev ad", esc(e.title)); x.style.background = color[e.src]; ad.append(x);
+    });
+    grid.append(ad);
+    timed.push(dayEvs.filter(e => !isAllDay(e)).map(e => {
+      const from = e.s < d0 ? H0 : e.s.getHours() + e.s.getMinutes() / 60;
+      const to = e.e >= d1 ? H1 : e.e.getHours() + e.e.getMinutes() / 60;
+      let s = Math.min(Math.max(from, H0), H1 - .5);
+      return {e, s, t: Math.max(Math.min(to, H1), s + .5)};  // min height + clamp events outside visible hours to the edges
+    }).sort((x, y) => x.s - y.s || y.t - x.t));
+  }
+
+  const hours = el("div", "hours");
+  for (let h = H0 + 1; h < H1; h++) { const s = el("span", null, `${h}`); s.style.top = pct(h); hours.append(s); }
+  grid.append(hours);
+
+  timed.forEach(srcLanes);
+
+  const now = new Date(), nowH = now.getHours() + now.getMinutes() / 60;
+  cols.forEach((c, i) => {
+    const col = el("div", "col" + (+c.day === +today && view === "week" ? " today" : ""));
+    for (let h = H0 + 1; h < H1; h++) { const l = el("div", "hline"); l.style.top = pct(h); col.append(l); }
+    if (+c.day === +today && nowH >= H0 && nowH <= H1) { const n = el("div", "now"); n.style.top = pct(nowH); col.append(n); }
+    for (const x of timed[i]) {
+      const box = el("div", "ev", `<b>${esc(x.e.title)}</b><small>${hm(x.e.s)}–${hm(x.e.e)}${x.e.location ? " · " + esc(x.e.location) : ""}</small>`);
+      Object.assign(box.style, {top: pct(x.s), height: `calc(${(x.t - x.s) / span * 100}% - 2px)`,
+        left: `calc(${x.left * 100}% + 2px)`, width: `calc(${x.width * 100}% - 4px)`,
+        background: color[x.e.src]});
+      col.append(box);
+    }
+    grid.append(col);
+  });
+}
+
+// Per column (day): if events of different calendars overlap, each calendar with events that day gets
+// one sub-column (always in source order); otherwise events use the full width.
+function srcLanes(items) {
+  const order = data.sources.map(s => s.id);
+  const clash = items.some((x, i) => items.some((y, j) => j > i && x.e.src !== y.e.src && x.s < y.t && y.s < x.t));
+  const srcs = clash ? [...new Set(items.map(x => x.e.src))].sort((a, b) => order.indexOf(a) - order.indexOf(b)) : [null];
+  srcs.forEach((src, li) => {
+    const mine = items.filter(x => !src || x.e.src === src);
+    lanes(mine);  // same-calendar overlaps still split inside the calendar's sub-column
+    mine.forEach(x => { x.width = 1 / (srcs.length * x.n); x.left = li / srcs.length + x.lane * x.width; });
+  });
+}
+
+function upcoming(evs, a, color, name) {  // list of the next 14 days after the viewed day
+  const box = $("upcoming"); box.innerHTML = "";
+  box.hidden = !evs;
+  if (!evs) return;
+  const from = addDays(a, 1), to = addDays(a, 15);
+  const list = evs.filter(e => e.s >= from && e.s < to).sort((x, y) => x.s - y.s);
+  box.append(el("h2", null, "Nächste 2 Wochen"));
+  if (!list.length) box.append(el("div", "muted", "Keine Termine"));
+  let last = "";
+  for (const e of list) {
+    const day = e.s.toLocaleDateString("de-DE", {weekday: "short", day: "numeric", month: "short"});
+    if (day !== last) { box.append(el("h3", null, day)); last = day; }
+    const time = isAllDay(e) ? "ganztägig" : `${hm(e.s)}–${hm(e.e)}`;
+    const item = el("div", "up", `<span class="dot" style="background:${color[e.src]}"></span><div><b>${esc(e.title)}</b>` +
+      `<small>${time} · ${esc(name[e.src])}${e.location ? " · " + esc(e.location) : ""}</small></div>`);
+    box.append(item);
+  }
+}
+
+const isAllDay = e => e.allDay || e.e - e.s >= 864e5;
+
+function lanes(items) {  // side-by-side layout for overlapping events
+  let cluster = [], ends = [], end = -1;
+  const flush = () => { cluster.forEach(x => x.n = ends.length); cluster = []; ends = []; };
+  for (const x of items) {
+    if (x.s >= end) flush();
+    let i = ends.findIndex(t => t <= x.s);
+    if (i < 0) { i = ends.length; ends.push(0); }
+    ends[i] = x.t; x.lane = i; cluster.push(x); end = Math.max(end, x.t);
+  }
+  flush();
+}
+
+function kw(d) {
+  const t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  t.setUTCDate(t.getUTCDate() + 4 - (t.getUTCDay() || 7));
+  return Math.ceil(((t - Date.UTC(t.getUTCFullYear(), 0, 1)) / 864e5 + 1) / 7);
+}
+
+async function toggle(id) {
+  const list = view === "week" ? "hidden" : "hiddenDay", h = new Set(data[list]);
+  h.has(id) ? h.delete(id) : h.add(id);
+  data[list] = [...h]; render();
+  await fetch("api/hidden", {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify({list, ids: data[list]})});
+}
+
+function go(fn) { lastTouch = Date.now(); fn(); load(); }
+$("prev").onclick = () => go(() => offset--);
+$("next").onclick = () => go(() => offset++);
+$("today").onclick = () => go(() => offset = 0);
+$("vWeek").onclick = () => go(() => { view = "week"; offset = 0; location.hash = "week"; });
+$("vDay").onclick = () => go(() => { view = "day"; offset = 0; location.hash = "day" + (person ? "/" + encodeURIComponent(person) : ""); });
+
+function tick() { $("clock").textContent = hm(new Date()); }
+setInterval(tick, 10e3); tick();
+setInterval(() => { if (Date.now() - lastTouch > 120e3) offset = 0; load(); }, 300e3);  // kiosk: jump back to today after 2 min idle
+setInterval(render, 60e3);  // move the "now" line
+load();
+</script>
+</body>
+</html>

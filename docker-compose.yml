@@ -1,0 +1,14 @@
+services:
+  center-view:
+    build: .
+    container_name: center-view
+    restart: unless-stopped
+    ports:
+      - "8001:8000"
+    volumes:
+      - ./data:/data
+    environment:
+      TZ: Europe/Berlin
+      CACHE_SECONDS: "300"
+      # schützt /settings mit Passwort (Benutzername beliebig); leer = offen
+      ADMIN_PASSWORD: ""
